@@ -26,6 +26,7 @@ If Conda is not initialized in that terminal, run:
 ```bash
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate f1gym39
+mkdir -p logs/rl_runs
 ```
 ## 3) Training command
 

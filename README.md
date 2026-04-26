@@ -33,22 +33,7 @@ mkdir -p logs/rl_runs
 This command trains PPO and stores all outputs in a dedicated run folder under `logs/rl_runs/`.
 
 ```bash
-python scripts/ppo_block_manager.py train \
-  --config maps/config_example_map.yaml \
-  --random-spawn \
-  --spawn-gap-min 1.0 \
-  --spawn-gap-max 3.0 \
-  --ego-lateral-offset-rand 0.1 \
-  --opp-lateral-offset-rand 0.5 \
-  --spawn-yaw-rand 0.1 \
-  --opp-rrt-replan-every 5 \
-  --steps 1000 \
-  --total-timesteps 400000 \
-  --visualize-every-episodes 50 \
-  --visualize-episodes 1 \
-  --visualize-max-steps 1000 \
-  --visualize-render-mode human_fast \
-  --output-dir logs/rl_runs/ppo_block_debug
+python scripts/ppo_block_manager.py train   --config maps/config_example_map.yaml   --random-spawn   --spawn-gap-min 1.0   --spawn-gap-max 3.0   --ego-lateral-offset-rand 0.1   --opp-lateral-offset-rand 0.5   --spawn-yaw-rand 0.1   --opp-rrt-replan-every 5   --steps 1000   --total-timesteps 400000   --output-dir logs/rl_runs/ppo_block_debug   --device cpu
 ```
 
 ### What gets written into the training log folder

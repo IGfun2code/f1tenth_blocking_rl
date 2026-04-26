@@ -37,7 +37,7 @@ from f110_gym.envs.base_classes import Integrator
 from src.controllers.pure_pursuit import DynamicPurePursuit, nearest_point_on_trajectory
 from src.planners.nominal_planner import load_waypoints_csv
 from src.planners.blocking_planner import BlockingPlanner
-logsfrom src.planners.rrt_star_overtake import RRTStarOvertakePlanner
+from src.planners.rrt_star_overtake import RRTStarOvertakePlanner
 
 
 DEFAULT_REWARD_WEIGHTS = {
@@ -896,6 +896,108 @@ def build_env_from_args(args, render_mode=None):
         threat_distance=args.threat_distance,
     )
 
+class PeriodicRenderEvalCallback:
+    def __init__(self, csv_path: str, build_env_fn, every_episodes: int = 50,
+                 n_eval_episodes: int = 1, max_steps: int = 600):
+        self.csv_path = csv_path
+        self.build_env_fn = build_env_fn
+        self.every_episodes = every_episodes
+        self.n_eval_episodes = n_eval_episodes
+        self.max_steps = max_steps
+        self._ensure_header()
+
+    def _ensure_header(self):
+        os.makedirs(os.path.dirname(self.csv_path), exist_ok=True)
+        if not os.path.exists(self.csv_path):
+            with open(self.csv_path, "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    "trigger_episode",
+                    "eval_idx",
+                    "episode_reward",
+                    "successful_defense",
+                    "block_hold_time_s",
+                    "threat_time_s",
+                    "position_held_time_s",
+                    "vehicle_contact_collisions",
+                    "ego_track_collisions",
+                    "opp_track_collisions",
+                    "passed_events",
+                    "completion_speed_mps",
+                ])
+
+    def callback_class(self):
+        from stable_baselines3.common.callbacks import BaseCallback
+
+        outer = self
+
+        class _CB(BaseCallback):
+            def __init__(self):
+                super().__init__()
+                self.completed_episodes = 0
+
+            def _run_visual_eval(self):
+                eval_env = outer.build_env_fn()
+                try:
+                    for eval_idx in range(outer.n_eval_episodes):
+                        obs, _ = eval_env.reset(seed=100000 + self.completed_episodes + eval_idx)
+                        done = False
+                        truncated = False
+                        ep_reward = 0.0
+                        info = {}
+
+                        steps = 0
+                        while not (done or truncated) and steps < outer.max_steps:
+                            action, _ = self.model.predict(obs, deterministic=True)
+                            obs, reward, done, truncated, info = eval_env.step(action)
+                            ep_reward += reward
+                            steps += 1
+
+                        metrics = info.get("episode_metrics", {})
+                        with open(outer.csv_path, "a", newline="") as f:
+                            writer = csv.writer(f)
+                            writer.writerow([
+                                self.completed_episodes,
+                                eval_idx,
+                                float(ep_reward),
+                                metrics.get("successful_defense", ""),
+                                metrics.get("block_hold_time_s", ""),
+                                metrics.get("threat_time_s", ""),
+                                metrics.get("position_held_time_s", ""),
+                                metrics.get("vehicle_contact_collisions", ""),
+                                metrics.get("ego_track_collisions", ""),
+                                metrics.get("opp_track_collisions", ""),
+                                metrics.get("passed_events", ""),
+                                metrics.get("completion_speed_mps", ""),
+                            ])
+                finally:
+                    try:
+                        eval_env.close()
+                    except Exception:
+                        pass
+
+            def _on_step(self):
+                if outer.every_episodes <= 0:
+                    return True
+
+                dones = self.locals.get("dones", None)
+                if dones is None:
+                    return True
+
+                # works for single-env and vec-env cases
+                completed_now = int(np.sum(dones))
+                if completed_now <= 0:
+                    return True
+
+                for _ in range(completed_now):
+                    self.completed_episodes += 1
+                    if self.completed_episodes % outer.every_episodes == 0:
+                        print(f"\\n[visual-eval] Rendering episode {self.completed_episodes}")
+                        self._run_visual_eval()
+
+                return True
+
+        return _CB
 
 def train_ppo(args):
     try:
@@ -913,12 +1015,32 @@ def train_ppo(args):
 
     epoch_logger = EpochRewardLogger(os.path.join(args.output_dir, "epoch_metrics.csv"))
     epoch_cb = epoch_logger.callback_class()()
+
     ckpt_cb = CheckpointCallback(
         save_freq=max(1, args.checkpoint_freq),
         save_path=os.path.join(args.output_dir, "checkpoints"),
         name_prefix="ppo_block",
     )
-    callback = CallbackList([epoch_cb, ckpt_cb])
+
+    visual_cb = None
+    if args.visualize_every_episodes > 0:
+        visual_logger = PeriodicRenderEvalCallback(
+            csv_path=os.path.join(args.output_dir, "visual_eval_metrics.csv"),
+            every_episodes=args.visualize_every_episodes,
+            n_eval_episodes=args.visualize_episodes,
+            max_steps=args.visualize_max_steps,
+            build_env_fn=lambda: build_env_from_args(
+                args,
+                render_mode=args.visualize_render_mode
+            ),
+        )
+        visual_cb = visual_logger.callback_class()()
+
+    callbacks = [epoch_cb, ckpt_cb]
+    if visual_cb is not None:
+        callbacks.append(visual_cb)
+
+    callback = CallbackList(callbacks)
 
     policy_kwargs = dict(net_arch=dict(pi=[128, 128], vf=[128, 128]))
     model = PPO(
@@ -1040,6 +1162,10 @@ def parse_args():
         p.add_argument("--headless", action="store_true")
         p.add_argument("--output-dir", type=str, default="runs/block_rl")
         p.add_argument("--device", type=str, default="auto")
+        p.add_argument("--visualize-every-episodes", type=int, default=50, help="Run one rendered eval episode every N completed training episodes; 0 disables it")
+        p.add_argument("--visualize-episodes", type=int, default=1, help="How many rendered eval episodes to run each visualization trigger")
+        p.add_argument("--visualize-max-steps", type=int, default=600, help="Max steps for each rendered visualization episode")
+        p.add_argument("--visualize-render-mode", type=str, default="human_fast", choices=["human", "human_fast"], help="Render mode for periodic visualization episodes")
 
     train_p = sub.add_parser("train")
     add_common(train_p)

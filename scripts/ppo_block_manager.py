@@ -304,7 +304,11 @@ class BlockDefenseEnv(gym.Env):
 
         obs_dim = history_len * 4 + 12
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32)
-        self.action_space = spaces.Box(low=0.0, high=1.0, shape=(3,), dtype=np.float32)
+        self.action_space = spaces.Box(
+            low=np.array([0.0, 0.0, 0.0], dtype=np.float32),
+            high=np.array([1.0, 1.0, 1.0], dtype=np.float32),
+            dtype=np.float32,
+        )
 
         self._episode_step = 0
         self._last_obs = None

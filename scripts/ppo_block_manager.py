@@ -10,6 +10,19 @@ from typing import Dict, Tuple, Optional, List
 
 import numpy as np
 
+def _safe_np_clip(a, a_min, a_max, out=None, **kwargs):
+    a = np.asarray(a)
+    a_min = np.asarray(a_min, dtype=a.dtype if hasattr(a, "dtype") else None)
+    a_max = np.asarray(a_max, dtype=a.dtype if hasattr(a, "dtype") else None)
+    result = np.minimum(np.maximum(a, a_min), a_max)
+    if out is not None:
+        out[...] = result
+        return out
+    return result
+
+# Force the shim unconditionally
+np.clip = _safe_np_clip
+
 # Simulator uses classic gym registration
 import gym as legacy_gym
 
@@ -44,11 +57,13 @@ DEFAULT_REWARD_WEIGHTS = {
     # positive
     "progress": 4.0,
     "lead_hold": 0.02,
-    "defense_under_threat": 0.05,
+    "defense_under_pressure": 0.05,
     "completion_bonus": 10.0,
+
     # negative
     "block_usage": 0.03,
     "lateral_error": 0.20,
+    "action_smoothness": 0.05,
     "passed_penalty": 3.0,
     "ego_track_collision": 12.0,
     "ego_vehicle_collision": 1.0,

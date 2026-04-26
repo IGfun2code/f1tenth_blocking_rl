@@ -36,16 +36,16 @@ python scripts/ppo_block_manager.py train \
   --config maps/config_example_map.yaml \
   --random-spawn \
   --spawn-gap-min 1.0 \
-  --spawn-gap-max 2.5 \
-  --ego-lateral-offset-rand 0.05 \
-  --opp-lateral-offset-rand 0.20 \
-  --spawn-yaw-rand 0.05 \
+  --spawn-gap-max 3.0 \
+  --ego-lateral-offset-rand 0.1 \
+  --opp-lateral-offset-rand 0.5 \
+  --spawn-yaw-rand 0.1 \
   --opp-rrt-replan-every 5 \
   --steps 1000 \
-  --total-timesteps 200000 \
+  --total-timesteps 400000 \
   --visualize-every-episodes 50 \
   --visualize-episodes 1 \
-  --visualize-max-steps 600 \
+  --visualize-max-steps 1000 \
   --visualize-render-mode human_fast \
   --output-dir logs/rl_runs/ppo_block_debug
 ```
